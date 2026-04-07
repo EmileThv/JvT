@@ -73,6 +73,18 @@ class MinihouseScene extends Phaser.Scene {
     if (state?.gameState) this.renderAll(state);
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  getVisualCoords(r, c) {
+    const myColor = window.gameShell.getMyColor();
+    if (myColor === 'black') {
+      return {
+        visualR: (ROWS - 1) - r,
+        visualC: (COLS - 1) - c
+      };
+    }
+    return { visualR: r, visualC: c };
+  }
+
   // ── State update (called from main.js) ───────────────────────────────────
   onStateUpdate(state) {
     this.selected = null;
@@ -95,8 +107,10 @@ class MinihouseScene extends Phaser.Scene {
 
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        const x = BOARD_OFFSET_X + c * CELL;
-        const y = BOARD_OFFSET_Y + r * CELL;
+        const { visualR, visualC } = this.getVisualCoords(r, c);
+
+        const x = BOARD_OFFSET_X + visualC * CELL;
+        const y = BOARD_OFFSET_Y + visualR * CELL;
 
         let color = (r + c) % 2 === 0 ? COLOR_LIGHT : COLOR_DARK;
 
@@ -150,8 +164,10 @@ class MinihouseScene extends Phaser.Scene {
         const cell = board[r][c];
         if (!cell) continue;
 
-        const x = BOARD_OFFSET_X + c * CELL + CELL / 2;
-        const y = BOARD_OFFSET_Y + r * CELL + CELL / 2;
+        const { visualR, visualC } = this.getVisualCoords(r, c);
+
+        const x = BOARD_OFFSET_X + visualC * CELL + CELL / 2;
+        const y = BOARD_OFFSET_Y + visualR * CELL + CELL / 2;
 
         const textureKey = PIECE_SYMBOLS[cell.piece]?.[cell.color];
         if (!textureKey) continue;
@@ -178,9 +194,15 @@ class MinihouseScene extends Phaser.Scene {
 
     const myColor = window.gameShell.getMyColor();
 
-    // White hand at bottom, black hand at top
-    this.renderHandPanel(hands.white, 'white', 620, myColor === 'white');
-    this.renderHandPanel(hands.black, 'black', 10,  myColor === 'black');
+    if (myColor === 'black') {
+      // Black hand at bottom, white hand at top
+      this.renderHandPanel(hands.white, 'white', 10, false);
+      this.renderHandPanel(hands.black, 'black', 620, true);
+    } else {
+      // White hand at bottom, black hand at top
+      this.renderHandPanel(hands.white, 'white', 620, myColor === 'white');
+      this.renderHandPanel(hands.black, 'black', 10, myColor === 'black');
+    }
   }
 
   renderHandPanel(hand, color, panelY, isMe) {
@@ -248,8 +270,9 @@ class MinihouseScene extends Phaser.Scene {
 
   // ── Labels ────────────────────────────────────────────────────────────────
   createLabels() {
-    const files = ['a','b','c','d','e','f'];
-    const ranks = ['1','2','3','4','5','6'];
+    const myColor = window.gameShell.getMyColor();
+    const files = myColor === 'black' ? ['f','e','d','c','b','a'] : ['a','b','c','d','e','f'];
+    const ranks = myColor === 'black' ? ['6','5','4','3','2','1'] : ['1','2','3','4','5','6'];
 
     for (let c = 0; c < COLS; c++) {
       this.add.text(
@@ -278,9 +301,18 @@ class MinihouseScene extends Phaser.Scene {
     const myColor = window.gameShell.getMyColor();
     if (state.gameState.turn !== myColor) return;
 
-    // Convert pointer to board coords
-    const c = Math.floor((pointer.x - BOARD_OFFSET_X) / CELL);
-    const r = Math.floor((pointer.y - BOARD_OFFSET_Y) / CELL);
+    // Convert pointer to visual board coords
+    const visualC = Math.floor((pointer.x - BOARD_OFFSET_X) / CELL);
+    const visualR = Math.floor((pointer.y - BOARD_OFFSET_Y) / CELL);
+
+    // Flip visual coords back to logical board coords
+    let r = visualR;
+    let c = visualC;
+
+    if (myColor === 'black') {
+      r = (ROWS - 1) - visualR;
+      c = (COLS - 1) - visualC;
+    }
 
     if (c < 0 || c >= COLS || r < 0 || r >= ROWS) {
       // Clicked outside board — deselect
