@@ -10,12 +10,12 @@ const COLS = 6;
 const ROWS = 6;
 
 const PIECE_SYMBOLS = {
-  king:   { white: '♔', black: '♚' },
-  queen:  { white: '♕', black: '♛' },
-  rook:   { white: '♖', black: '♜' },
-  bishop: { white: '♗', black: '♝' },
-  knight: { white: '♘', black: '♞' },
-  pawn:   { white: '♙', black: '♟' },
+  king:   { white: 'wK', black: 'bK' },
+  queen:  { white: 'wQ', black: 'bQ' },
+  rook:   { white: 'wR', black: 'bR' },
+  bishop: { white: 'wB', black: 'bB' },
+  knight: { white: 'wN', black: 'bN' },
+  pawn:   { white: 'wP', black: 'bP' },
 };
 
 const COLOR_LIGHT   = 0xf0ead6;
@@ -34,14 +34,28 @@ class MinihouseScene extends Phaser.Scene {
     this.selected     = null;   // { r, c } or { handPiece, color }
     this.legalMoves   = [];
     this.boardGraphics = null;
-    this.pieceTexts    = [];
+    this.pieceImages   = [];
     this.handGraphics  = null;
-    this.handTexts     = [];
+    this.handItems     = [];
     this.lastMove      = null;  // { from, to } for highlight
   }
 
   // ── Preload ───────────────────────────────────────────────────────────────
-  preload() {}
+  preload() {
+    const baseUrl = 'https://upload.wikimedia.org/wikipedia/commons';
+    const pieces = {
+      wK: '/4/42/Chess_klt45.svg', wQ: '/1/15/Chess_qlt45.svg',
+      wR: '/7/72/Chess_rlt45.svg', wB: '/b/b1/Chess_blt45.svg',
+      wN: '/7/70/Chess_nlt45.svg', wP: '/4/45/Chess_plt45.svg',
+      bK: '/f/f0/Chess_kdt45.svg', bQ: '/4/47/Chess_qdt45.svg',
+      bR: '/f/ff/Chess_rdt45.svg', bB: '/9/98/Chess_bdt45.svg',
+      bN: '/e/ef/Chess_ndt45.svg', bP: '/c/c7/Chess_pdt45.svg'
+    };
+
+    Object.entries(pieces).forEach(([key, path]) => {
+      this.load.svg(key, baseUrl + path, { width: CELL, height: CELL });
+    });
+  }
 
   // ── Create ────────────────────────────────────────────────────────────────
   create() {
@@ -127,9 +141,9 @@ class MinihouseScene extends Phaser.Scene {
 
   // ── Piece rendering ───────────────────────────────────────────────────────
   renderPieces(board, turn, checkState) {
-    // Destroy old text objects
-    this.pieceTexts.forEach(t => t.destroy());
-    this.pieceTexts = [];
+    // Destroy old image objects
+    this.pieceImages.forEach(img => img.destroy());
+    this.pieceImages = [];
 
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
@@ -139,23 +153,18 @@ class MinihouseScene extends Phaser.Scene {
         const x = BOARD_OFFSET_X + c * CELL + CELL / 2;
         const y = BOARD_OFFSET_Y + r * CELL + CELL / 2;
 
-        const symbol = PIECE_SYMBOLS[cell.piece]?.[cell.color] || '?';
+        const textureKey = PIECE_SYMBOLS[cell.piece]?.[cell.color];
+        if (!textureKey) continue;
+
+        const img = this.add.image(x, y, textureKey).setDisplaySize(CELL * 0.8, CELL * 0.8);
 
         // Check highlight glow for king
-        let tint = cell.color === 'white' ? '#1a1a2e' : '#f0ead6';
         if (cell.piece === 'king') {
-          if (cell.color === 'white' && checkState?.whiteInCheck) tint = '#ff4d6d';
-          if (cell.color === 'black' && checkState?.blackInCheck) tint = '#ff4d6d';
+          if (cell.color === 'white' && checkState?.whiteInCheck) img.setTint(0xff4d6d);
+          if (cell.color === 'black' && checkState?.blackInCheck) img.setTint(0xff4d6d);
         }
 
-        const t = this.add.text(x, y, symbol, {
-          fontSize: '52px',
-          color: tint,
-          stroke: cell.color === 'white' ? '#000000' : '#ffffff',
-          strokeThickness: 1,
-        }).setOrigin(0.5, 0.5);
-
-        this.pieceTexts.push(t);
+        this.pieceImages.push(img);
       }
     }
   }
@@ -164,8 +173,8 @@ class MinihouseScene extends Phaser.Scene {
   renderHands(hands) {
     const g = this.handGraphics;
     g.clear();
-    this.handTexts.forEach(t => t.destroy());
-    this.handTexts = [];
+    this.handItems.forEach(item => item.destroy());
+    this.handItems = [];
 
     const myColor = window.gameShell.getMyColor();
 
@@ -197,13 +206,13 @@ class MinihouseScene extends Phaser.Scene {
     const label = this.add.text(panelX + 8, panelY + 4, isMe ? 'YOUR HAND' : 'OPPONENT', {
       fontSize: '9px', color: labelColor, alpha: 0.6,
     });
-    this.handTexts.push(label);
+    this.handItems.push(label);
 
     // Pieces
     let ix = panelX + 8;
     let pieceIdx = 0;
     Object.entries(counts).forEach(([piece, count]) => {
-      const symbol = PIECE_SYMBOLS[piece]?.[color] || '?';
+      const textureKey = PIECE_SYMBOLS[piece]?.[color];
       const isSelected = this.selected?.handPiece === piece && this.selected?.color === color;
       const canInteract = isMe;
 
@@ -213,26 +222,25 @@ class MinihouseScene extends Phaser.Scene {
         g.fillRoundedRect(ix - 2, panelY + 18, 32, 36, 4);
       }
 
-      const pt = this.add.text(ix, panelY + 20, symbol, {
-        fontSize: '28px',
-        color: color === 'white' ? '#1a1a2e' : '#f0ead6',
-      });
+      if (!textureKey) return;
+
+      const pt = this.add.image(ix + 14, panelY + 36, textureKey).setDisplaySize(32, 32);
 
       if (count > 1) {
-        const ct = this.add.text(ix + 20, panelY + 38, `×${count}`, {
-          fontSize: '10px', color: labelColor,
-        });
-        this.handTexts.push(ct);
+        const ct = this.add.text(ix + 18, panelY + 38, `×${count}`, {
+          fontSize: '10px', color: labelColor, stroke: '#000', strokeThickness: 2
+        }).setDepth(1);
+        this.handItems.push(ct);
       }
 
       // Store metadata for click detection
-      pt.setInteractive(new Phaser.Geom.Rectangle(0, 0, 32, 40), Phaser.Geom.Rectangle.Contains);
+      pt.setInteractive();
       pt.on('pointerdown', (pointer, localX, localY, event) => {
         event.stopPropagation();
         if (canInteract) this.selectHandPiece(piece, color);
       });
 
-      this.handTexts.push(pt);
+      this.handItems.push(pt);
       ix += 36;
       pieceIdx++;
     });
