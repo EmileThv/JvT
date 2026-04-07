@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CHAOS GAMES</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
+  <!-- Phaser -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+
+  <!-- Socket.io (served by our server) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d0f;
+      --surface:  #18181c;
+      --border:   #2a2a32;
+      --text:     #e8e8f0;
+      --muted:    #6b6b80;
+      --white:    #f0ead6;
+      --black:    #2a1f3d;
+      --accent:   #ff4d6d;
+      --accent2:  #4dffb4;
+      --warn:     #ffd166;
+      --font-display: 'Bebas Neue', sans-serif;
+      --font-mono:    'Space Mono', monospace;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      overflow: hidden;
+    }
+
+    /* ── Screens ── */
+    .screen {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px;
+      transition: opacity 0.4s ease;
+    }
+    .screen.hidden { opacity: 0; pointer-events: none; }
+
+    /* ── Waiting screen ── */
+    #screen-waiting .title {
+      font-family: var(--font-display);
+      font-size: clamp(64px, 10vw, 120px);
+      letter-spacing: 4px;
+      line-height: 1;
+      color: var(--text);
+    }
+    #screen-waiting .title span { color: var(--accent); }
+
+    .pulse-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--accent2);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%       { transform: scale(1.6); opacity: 0.5; }
+    }
+
+    .waiting-msg {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      display: flex; align-items: center; gap: 12px;
+    }
+
+    .color-badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 3px;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .color-badge.white { background: var(--white); color: #1a1a1a; }
+    .color-badge.black { background: var(--black); color: var(--accent2); border: 1px solid var(--accent2); }
+
+    /* ── Paused overlay ── */
+    #screen-paused {
+      background: rgba(13,13,15,0.85);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    #screen-paused h2 {
+      font-family: var(--font-display);
+      font-size: 72px;
+      color: var(--warn);
+      letter-spacing: 4px;
+    }
+
+    /* ── Game over screen ── */
+    #screen-gameover {
+      background: var(--bg);
+      z-index: 200;
+    }
+    #screen-gameover .winner-text {
+      font-family: var(--font-display);
+      font-size: clamp(48px, 8vw, 96px);
+      letter-spacing: 4px;
+    }
+    #screen-gameover .winner-text.white { color: var(--white); }
+    #screen-gameover .winner-text.black { color: var(--accent2); }
+
+    /* ── HUD ── */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 50;
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    #hud.hidden { display: none; }
+
+    .hud-game-name {
+      font-family: var(--font-display);
+      font-size: 22px;
+      letter-spacing: 3px;
+      color: var(--accent);
+    }
+
+    .hud-scores {
+      display: flex; align-items: center; gap: 20px;
+    }
+    .hud-score {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .hud-score .score-val {
+      font-size: 22px;
+      font-family: var(--font-display);
+      letter-spacing: 2px;
+    }
+    .hud-score.white .score-val { color: var(--white); }
+    .hud-score.black .score-val { color: var(--accent2); }
+
+    .hud-turn {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .hud-turn span {
+      font-weight: 700;
+    }
+    .hud-turn span.white { color: var(--white); }
+    .hud-turn span.black { color: var(--accent2); }
+
+    .hud-check {
+      color: var(--accent);
+      font-weight: 700;
+      animation: blink 0.5s step-end infinite;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* ── Phaser canvas wrapper ── */
+    #game-container {
+      position: fixed;
+      top: 56px; left: 0; right: 0; bottom: 0;
+    }
+    #game-container canvas {
+      display: block;
+      margin: auto;
+    }
+
+    /* ── Promotion modal ── */
+    #promotion-modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 300;
+    }
+    #promotion-modal.hidden { display: none; }
+    .promotion-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 32px;
+      border-radius: 6px;
+      text-align: center;
+    }
+    .promotion-box h3 {
+      font-family: var(--font-display);
+      font-size: 28px;
+      letter-spacing: 3px;
+      margin-bottom: 20px;
+      color: var(--warn);
+    }
+    .promotion-choices {
+      display: flex; gap: 16px; justify-content: center;
+    }
+    .promo-btn {
+      padding: 12px 20px;
+      background: var(--border);
+      border: 1px solid var(--muted);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .promo-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Rejected screen ── */
+    #screen-rejected {
+      z-index: 500;
+    }
+    #screen-rejected h2 {
+      font-family: var(--font-display);
+      font-size: 64px;
+      color: var(--accent);
+      letter-spacing: 4px;
+    }
+    #screen-rejected p {
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Waiting screen ── -->
+  <div id="screen-waiting" class="screen">
+    <div class="title">CHAOS<span>GAMES</span></div>
+    <div id="waiting-color-info" style="font-size:13px; color: var(--muted); letter-spacing:2px; text-transform:uppercase;">
+      Connecting...
+    </div>
+    <div class="waiting-msg">
+      <div class="pulse-dot"></div>
+      <span id="waiting-text">Waiting for opponent</span>
+    </div>
+  </div>
+
+  <!-- ── Paused overlay ── -->
+  <div id="screen-paused" class="screen hidden">
+    <h2>PAUSED</h2>
+    <p style="color:var(--muted); letter-spacing:2px; font-size:13px; text-transform:uppercase;">
+      Opponent disconnected — waiting for them to return...
+    </p>
+    <div class="pulse-dot"></div>
+  </div>
+
+  <!-- ── Game over screen ── -->
+  <div id="screen-gameover" class="screen hidden">
+    <div id="gameover-winner" class="winner-text"></div>
+    <div style="color:var(--muted); font-size:12px; letter-spacing:3px; text-transform:uppercase; margin-top:8px;">
+      wins the round
+    </div>
+  </div>
+
+  <!-- ── Rejected screen ── -->
+  <div id="screen-rejected" class="screen hidden">
+    <h2>FULL HOUSE</h2>
+    <p>This game is already in session. Only 2 players allowed.</p>
+  </div>
+
+  <!-- ── HUD ── -->
+  <div id="hud" class="hidden">
+    <div class="hud-game-name">MINIHOUSE</div>
+    <div class="hud-scores">
+      <div class="hud-score white">
+        <span class="color-badge white">W</span>
+        <span class="score-val" id="score-white">0</span>
+      </div>
+      <span style="color:var(--muted)">—</span>
+      <div class="hud-score black">
+        <span class="color-badge black">B</span>
+        <span class="score-val" id="score-black">0</span>
+      </div>
+    </div>
+    <div class="hud-turn">
+      TURN: <span id="hud-turn-color" class="white">WHITE</span>
+      <span id="hud-check" class="hud-check hidden"> · CHECK</span>
+    </div>
+  </div>
+
+  <!-- ── Game canvas ── -->
+  <div id="game-container"></div>
+
+  <!-- ── Promotion modal ── -->
+  <div id="promotion-modal" class="hidden">
+    <div class="promotion-box">
+      <h3>PROMOTE PAWN</h3>
+      <div class="promotion-choices">
+        <button class="promo-btn" data-piece="rook">Rook</button>
+        <button class="promo-btn" data-piece="knight">Knight</button>
+        <button class="promo-btn" data-piece="bishop">Bishop</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="scenes/Minihouse.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
